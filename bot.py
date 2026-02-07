@@ -75,10 +75,13 @@ async def focus_timer(ctx: discord.Interaction, minutes: int):
 	if user_id not in timers_active_focus:
 		return
 	if minutes == 1:
+		await ctx.followup.send("timer ended")
 		await ctx.followup.send(f"You have focused for {minutes} minute")
 	elif minutes >= 20:
+		await ctx.followup.send("timer ended")
 		await ctx.followup.send(f"You have focused for {minutes} minutes! Wow thats Exceptional 🔥🔥🔥")
 	elif minutes >= 10:
+		await ctx.followup.send("timer ended")
 		await ctx.followup.send(f"You have focused for {minutes} minutes! 🔥")
 
 	if minutes >= 10:
