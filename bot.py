@@ -3,12 +3,11 @@ from discord.ext import commands
 from discord import app_commands
 import asyncio
 from datetime import datetime, timedelta
+from datetime import date
 import random
 import os
 from dotenv import load_dotenv
 
-day = datetime.now().day
-month = datetime.now().month
 timers_active_focus = {}
 timers_active_break = {}
 streak_counter = {}
@@ -64,6 +63,44 @@ async def ping(ctx: discord.Interaction):
 
 
 
+async def focus_timer(ctx: discord.Interaction, minutes: int):
+	today = datetime.now()
+	day = today.day
+	month = today.month
+	year = today.year
+	user_id = ctx.user.id
+
+	await asyncio.sleep(minutes*60)
+
+	if user_id not in timers_active_focus:
+		return
+	if minutes == 1:
+		await ctx.followup.send(f"You have focused for {minutes} minute")
+	elif minutes >= 20:
+		await ctx.followup.send(f"You have focused for {minutes} minutes! Wow thats Exceptional 🔥🔥🔥")
+	elif minutes >= 10:
+		await ctx.followup.send(f"You have focused for {minutes} minutes! 🔥")
+
+	if minutes >= 10:
+		if user_id not in streak_counter:
+			streak_counter[user_id] = {"day": day,"month": month,"year": year,"value": 1, "reminded": day}
+			await ctx.followup.send("you have started a streak")
+		else:
+			last_date = date(streak_counter[user_id]["year"], streak_counter[user_id]["month"], streak_counter[user_id]["day"])
+			today_date = date.today()
+			days_diff = (today_date - last_date).days
+			if days_diff == 0:
+				pass
+			elif days_diff >= 2:
+				await ctx.followup.send("You gone for to long your streak has been reset to 1")
+				streak_counter[user_id]["value"] = 1
+			else:
+				streak_counter[user_id]["value"] += 1
+				streak_counter[user_id]["reminded"] = day
+				await ctx.followup.send("You have added to you current streak!")
+
+	timers_active_focus.pop(user_id, None)
+
 @bot.tree.command(name="focus", description="start a focus timer")
 async def focus(ctx: discord.Interaction, minutes: int):
 	user_id = ctx.user.id
@@ -73,43 +110,25 @@ async def focus(ctx: discord.Interaction, minutes: int):
 	if minutes <= 0:
 		await ctx.response.send_message("Please enter a positive value")
 		return
-
-	timers_active_focus[user_id] = True
-
-
+	
 	await ctx.response.send_message("your focus timer has started")
+	timers_active_focus[user_id] = asyncio.create_task(focus_timer(ctx, minutes))
 
+
+async def break_timer(ctx: discord.Interaction, minutes: int):
+	user_id = ctx.user.id
+	
 	await asyncio.sleep(minutes*60)
 
-	if user_id not in timers_active_focus:
+	if user_id not in timers_active_break:
 		return
-	if minutes == 1:
-		await ctx.followup.send(f"You have focused for {minutes} minute")
-	elif minutes >= 10:
-		await ctx.followup.send(f"You have focused for {minutes} minutes!")
-	elif minutes >= 20:
-		await ctx.followup.send(f"You have focused for {minutes} minutes! 🔥")
-	else:
-		await ctx.followup.send(f"You have focused for {minutes} minutes! Wow thats Exceptional 🔥🔥🔥")
 
-	if minutes >= 10:
-		if user_id not in streak_counter:
-			streak_counter[user_id] = {"day": day,"month": month ,"value": 1}
-			await ctx.followup.send("you have started a streak")
-		else:
-			if streak_counter[user_id]["day"] == day and streak_counter[user_id]["month"] == month:
-				pass
-			elif streak_counter[user_id]["day"] >= day+2 or streak_counter[user_id]["month"] != month:
-				await ctx.followup.send("You gone for to long your streak has been reset to 1")
-				streak_counter[user_id]["value"] = 1
-			else:
-				streak_counter[user_id]["value"] += 1
-				await ctx.followup.send("You have added to you current streak!")
+	await ctx.followup.send("your break timer has ended")
 
-	timers_active_focus.pop(user_id)
+	timers_active_break.pop(user_id, None)
 
 
-@bot.tree.command(name="break", description="start a focus timer")
+@bot.tree.command(name="break", description="start a Break timer")
 async def rest(ctx: discord.Interaction, minutes: int):
 	user_id = ctx.user.id
 	if user_id in timers_active_break:
@@ -119,31 +138,28 @@ async def rest(ctx: discord.Interaction, minutes: int):
 		await ctx.response.send_message("Please enter a positive value")
 		return
 
-	timers_active_break[user_id] = True
-
-	await ctx.response.send_message("your break timer has started")
-
-	await asyncio.sleep(minutes*60)
-
-	if user_id not in timers_active_break:
-		return
-
-	await ctx.followup.send("your break timer has ended")
-
-	timers_active_break.pop(user_id)
+	timers_active_break[user_id] = asyncio.create_task(break_timer(ctx, minutes))
 
 
 @bot.tree.command(name="stop_focus", description="stop focus timer")
 async def stop_focus(ctx: discord.Interaction):
 	user_id = ctx.user.id
-	timers_active_focus.pop(user_id)
-	await ctx.response.send_message("Focus timer stopped")
+	task = timers_active_focus.pop(user_id, None)
+	if task:
+		await ctx.response.send_message("Focus timer stopped")
+		task.cancel()
+	else:
+		await ctx.response.send_message("You don't have an active focus timer")
 
 @bot.tree.command(name="stop_break", description="stop break timer")
 async def stop_break(ctx: discord.Interaction):
 	user_id = ctx.user.id
-	timers_active_break.pop(user_id)
-	await ctx.response.send_message("Break timer stopped")
+	task = timers_active_break.pop(user_id, None)
+	if task:
+		await ctx.response.send_message("Break timer stopped")
+		task.cancel()
+	else:
+		await ctx.response.send_message("You don't have an active break timer")
 
 @bot.tree.command(name="track", description="check how many messages you have sent in the server")
 async def track(ctx: discord.Interaction):
@@ -166,10 +182,15 @@ async def streak_checker():
 		hour_now = datetime.now().time().hour
 		day_now = datetime.now().day
 		month_now = datetime.now().month
+
 		for user_id, data in list(streak_counter.items()):
+			last_date = date(data["year"], data["month"], data["day"])
+			today = date.today()
+			days_diff = (today - last_date).days
 			day_then = data["day"]
 			month_then = data["month"]
-			if (month_now == month_then and (day_now - day_then) >= 2) or (month_now != month_then and day_now >= 2):
+			reminded = data["reminded"]
+			if days_diff >= 2:
 				try:
 					user = await bot.fetch_user(user_id)
 					await user.send("Your streak has ended, finish a focus timer to start a new streak")
@@ -179,20 +200,22 @@ async def streak_checker():
 			elif day_now == day_then and month_now == month_then:
 				pass
 			elif hour_now == 17:
-				reminders = [
-					"Don’t forget your focus streak today! Start a session to keep the momentum going.",
-					"Your streak is on the line! Finish a focus timer and keep it alive.",
-					"Another day, another focus session! Let’s keep that streak shining.",
-					"Consistency is key! Start a focus timer and maintain your streak.",
-					"Time to focus! Your streak is waiting for you — don’t let it slip.",
-					"Keep the streak going! A single focus session keeps the streak alive.",
-					"Hit your focus target today and keep your streak strong!",
-					"FlowMode ON! Start a focus timer and ride the streak wave.",
-					"Your streak is valuable — don’t break it! Focus for a few minutes now.",
-					"Little steps build big habits! Start a focus session to continue your streak."
-				]
-				user = await bot.fetch_user(user_id)
-				await user.send(random.choice(reminders))
+				if reminded != day_now:
+					reminders = [
+						"Don’t forget your focus streak today! Start a session to keep the momentum going.",
+						"Your streak is on the line! Finish a focus timer and keep it alive.",
+						"Another day, another focus session! Let’s keep that streak shining.",
+						"Consistency is key! Start a focus timer and maintain your streak.",
+						"Time to focus! Your streak is waiting for you — don’t let it slip.",
+						"Keep the streak going! A single focus session keeps the streak alive.",
+						"Hit your focus target today and keep your streak strong!",
+						"FlowMode ON! Start a focus timer and ride the streak wave.",
+						"Your streak is valuable — don’t break it! Focus for a few minutes now.",
+						"Little steps build big habits! Start a focus session to continue your streak."
+					]
+					user = await bot.fetch_user(user_id)
+					await user.send(random.choice(reminders))
+					streak_counter[user_id]["reminded"] = day_now
 	
 		await asyncio.sleep(60*60)
 
@@ -211,8 +234,7 @@ async def quote(ctx: discord.Interaction):
 		   "Don’t stop when you’re tired. Stop when you’re done.",
 		   "Every day is a second chance."
 		   ]
-	quote = random.randint(0,len(quotes)-1)
-	await ctx.response.send_message(quotes[quote])
+	await ctx.response.send_message(random.choice(quotes))
 
 
 load_dotenv()
