@@ -21,8 +21,8 @@ message_counter = {}
 chat_count = {}
 active_chat = set()
 pemium_users = {
-     989639440358072371: True,
-     931924643210752061: True
+     123456789123456789: True,
+     123456789123456789: True
 }
 
 load_dotenv()
